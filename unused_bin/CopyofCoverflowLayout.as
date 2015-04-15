@@ -1,0 +1,222 @@
+package com.rialvalue.layouts {
+	import flash.events.TimerEvent;
+	import flash.geom.Matrix;
+	import flash.geom.PerspectiveProjection;
+	import flash.geom.Point;
+	import flash.geom.Vector3D;
+	import flash.utils.Timer;
+	
+	import mx.core.ILayoutElement;
+	import mx.core.IVisualElement;
+	import mx.core.UIComponent;
+	
+	import spark.layouts.supportClasses.LayoutBase;
+	
+	public class CoverflowLayout extends LayoutBase {
+		private static const ANIMATION_DURATION:int = 250;
+		private static const ANIMATION_STEPS:int = 24; // fps
+		private static const RIGHT_SIDE:int = -1;
+		private static const LEFT_SIDE:int = 1;
+		private static const MAX_SIDE_ELEMENTS:int = 5;
+		private static const MAX_ELEMENTS:int = (MAX_SIDE_ELEMENTS*2)+1;
+		
+		private var finalMatrixs:Vector.<Matrix>;
+		private var centerX:Number;
+		private var centerY:Number;
+		private var transitionTimer:Timer;
+		
+		
+		private var _elementRotation:Number;
+		private var _selectedItemProximity:Number;
+		private var _selectedIndex:int;
+		private var _depthDistance:Number;
+		private var _perspectiveProjectionX:Number;
+		private var _perspectiveProjectionY:Number;
+		private var _focalLength:Number = 300;
+		private var _horizontalDistance:Number = 100;
+		
+		
+		public function set perspectiveProjectionX(value:Number):void {
+			_perspectiveProjectionX = value;
+			invalidateTarget();
+		}
+		
+		
+		public function set perspectiveProjectionY(value:Number):void {
+			_perspectiveProjectionY = value;
+			invalidateTarget();
+		}
+		
+		
+		public function set focalLength(value:Number):void {
+			_focalLength = value;
+			invalidateTarget();
+		}
+		
+		
+		public function set elementRotation(value:Number):void {
+			_elementRotation = value;
+			invalidateTarget();
+		}
+		
+		
+		public function set horizontalDistance(value:Number):void {
+			_horizontalDistance = value;
+			invalidateTarget();
+		}
+		
+		
+		public function set depthDistance(value:Number):void {
+			_depthDistance = value;
+			invalidateTarget();
+		}
+		
+		
+		public function set selectedItemProximity(value:Number):void {
+			_selectedItemProximity = value;
+			invalidateTarget();
+		}
+		
+		
+		public function set selectedIndex(value:Number):void {
+			_selectedIndex = value;
+			
+			if (target) {
+				target.invalidateDisplayList();
+				target.invalidateSize();
+			}
+		}
+		
+		
+		private function invalidateTarget():void {
+			if (target) {
+				target.invalidateDisplayList();
+				target.invalidateSize();
+			}
+		}
+		
+		
+		private function centerPerspectiveProjection(width:Number, height:Number):void {
+			_perspectiveProjectionX = _perspectiveProjectionX != -1 ? _perspectiveProjectionX : width / 2;
+			_perspectiveProjectionY = _perspectiveProjectionY != -1 ? _perspectiveProjectionY : height / 2;
+			
+			var perspectiveProjection:PerspectiveProjection = new PerspectiveProjection();
+			perspectiveProjection.projectionCenter = new Point(_perspectiveProjectionX, _perspectiveProjectionY);
+			perspectiveProjection.focalLength = _focalLength;
+			
+			target.transform.perspectiveProjection = perspectiveProjection;
+		}
+		
+		
+		private function positionCentralElement(element:ILayoutElement, width:Number, height:Number):Matrix {
+			element.setLayoutBoundsSize(NaN, NaN, false);
+			var matrix:Matrix = new Matrix();
+			var elementWidth:Number = element.getLayoutBoundsWidth(false);
+			var elementHeight:Number = element.getLayoutBoundsHeight(false);
+			
+			centerX = (width - elementWidth) / 2;
+			centerY = (height - elementHeight) / 2;
+			
+			matrix.translate(centerX, centerY-12);
+			
+			element.setLayoutBoundsSize(NaN, NaN, false);
+			
+			return matrix;
+		}
+		
+		
+		private function positionLateralElement(element:ILayoutElement, index:int, side:int):Matrix {
+			element.setLayoutBoundsSize(NaN, NaN, false);
+			var matrix:Matrix = new Matrix();
+			var elementWidth:Number = element.getLayoutBoundsWidth(false);
+			var elementHeight:Number = element.getLayoutBoundsHeight(false);
+			
+			//var zPosition:Number = index * _depthDistance;
+			
+			if (side == RIGHT_SIDE) {
+				matrix.translate(-elementWidth+11, 0);
+				matrix.translate(2 * elementWidth - _horizontalDistance, 0);
+			}
+			matrix.translate(centerX - side * (index) * _horizontalDistance, centerY);
+			
+			return matrix;
+		}
+		
+		private var leftOffset:int = 0;
+		private var rightOffset:int = 0;
+		private var numElements:int = 0;
+		override public function updateDisplayList(width:Number, height:Number):void {
+			var i:int = 0;
+			var j:int = 0;
+			var matrix:Matrix;
+			
+			leftOffset = 0;
+			rightOffset = 0;
+			
+			if (target.numElements > MAX_ELEMENTS) {
+				if (_selectedIndex > MAX_SIDE_ELEMENTS) {
+					leftOffset += _selectedIndex-MAX_SIDE_ELEMENTS;
+				}
+				if (target.numElements - _selectedIndex > MAX_SIDE_ELEMENTS) {
+					rightOffset += target.numElements - _selectedIndex - MAX_SIDE_ELEMENTS - 1;
+				}
+			}
+			numElements = target.numElements - leftOffset - rightOffset;
+			trace(numElements);
+			if (numElements > 0) {
+				finalMatrixs = new Vector.<Matrix>(numElements);
+				
+				var midElement:int = _selectedIndex - leftOffset;
+				
+				matrix = positionCentralElement(target.getVirtualElementAt(_selectedIndex), width, height);
+				finalMatrixs[midElement] = matrix;
+				
+				for (i = midElement - 1; i >= 0; i--) {
+					matrix = positionLateralElement(target.getVirtualElementAt(i+leftOffset), midElement - i, LEFT_SIDE);
+					finalMatrixs[i] = matrix;
+				}
+				
+				for (j = 1, i = midElement + 1; i < numElements; i++, j++) {
+					matrix = positionLateralElement(target.getVirtualElementAt(i+leftOffset), j, RIGHT_SIDE);
+					finalMatrixs[i] = matrix;
+				}
+				
+				playTransition();
+			}
+		}
+		
+		
+		private function playTransition():void {
+			if (transitionTimer) {
+				transitionTimer.stop();
+				transitionTimer.reset();
+			} else {
+				transitionTimer = new Timer(ANIMATION_DURATION / ANIMATION_STEPS, ANIMATION_STEPS);
+				transitionTimer.addEventListener(TimerEvent.TIMER, animationTickHandler);
+				transitionTimer.addEventListener(TimerEvent.TIMER_COMPLETE, animationTimerCompleteHandler);
+			}
+			transitionTimer.start();
+			
+		}
+		
+		
+		private function animationTickHandler(event:TimerEvent):void {
+			var initialMatrix:Matrix;
+			var finalMatrix:Matrix;
+			var element:ILayoutElement;
+			
+			for (var i:int = 0; i < numElements; i++) {
+				finalMatrix = finalMatrixs[i];
+				element = target.getVirtualElementAt(i+leftOffset);
+				initialMatrix = UIComponent(element).transform.matrix;
+				initialMatrix.translate(finalMatrix.tx, finalMatrix.ty);
+				element.setLayoutMatrix(initialMatrix, false);
+			}
+		}
+		
+		
+		private function animationTimerCompleteHandler(event:TimerEvent):void {
+			finalMatrixs = null;
+		}
+	}
+}

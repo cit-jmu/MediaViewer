@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Group xmlns:fx="http://ns.adobe.com/mxml/2009" 
+		 xmlns:s="library://ns.adobe.com/flex/spark" 
+		 xmlns:mx="library://ns.adobe.com/flex/mx" 
+		 xmlns:mv="org.mdid.MediaViewer.*"
+		 width="0" height="0" visible="false">
+	<fx:Declarations>
+		<mv:ParentContext contextView="{this}" />
+	</fx:Declarations>
+</s:Group>
